@@ -91,9 +91,14 @@ in 2026, while our forward-return labels end mid-2025. The windows **do not over
 all**, so a backtest returns either a single unflagged row or zero rows. The earliest
 honest test is around **March 2027**.
 
-Two feeds are additionally thin: quarterly pledge data covers 19 stocks and credit-rating
-actions 27. The overlay leans on the broader event-based pledge history instead, but this
-is a data-acquisition gap, not a modelling choice.
+Credit-rating actions remain thin (27 stocks). The promoter-pledge signal, by contrast, is
+now fully live: it reads the point-in-time quarterly disclosure record keyed on the NSE
+**broadcast** date (median lag from quarter end is 98 days, so keying on the quarter date
+would be three months of look-ahead), and a disclosure older than 400 days is dropped
+rather than carried, because NSE re-broadcasts ancient quarters. On the current run 666 of
+4,547 scored stocks carry a penalty and 133 are hard-capped. Before v1.5.0 the pledge
+branch was **dead code** — the penalty was documented and never fired for any stock. See
+[CHANGELOG.md](CHANGELOG.md).
 
 **So: the governance overlay reflects real disclosed facts, and its severity weighting is
 judgement.** We are not going to pretend those penalty numbers came out of a study.
@@ -141,10 +146,12 @@ days would add roughly 490 stocks, of which about 64 are above ₹500 crore.
 
 ## 6. Bank and NBFC scoring is structurally weaker
 
-Financial templates null out five metrics they cannot support, so financials are scored on
-fewer inputs and report lower coverage by construction: measured cohort averages are
-`general` **83.4%**, `bank` **70.4%**, `nbfc` **67.6%**. In the NBFC cohort, 53 eligible
-stocks sit within 8 percentage points of the 60% eligibility bar.
+Financial templates null out the metrics they cannot support (five for `nbfc`, seven for
+`bank`), so financials are scored on fewer inputs. Since v1.4.0 coverage is measured against
+what the template *can* emit, so this no longer shows up as lower coverage: on the current
+run the cohort averages are `general` **91.6%**, `nbfc` **87.7%**, `bank` **99.3%**, and
+4 of 540 NBFCs and 0 of 40 banks are ineligible. The structural weakness is unchanged —
+fewer metrics is less information about the company, however the ratio is expressed.
 
 The proper fix is bank-specific metrics — NPA ratios, capital adequacy, provision coverage,
 net interest margin, CASA. **We audited for these and they are not available to us:** those
@@ -153,24 +160,32 @@ interest line for banks (no deposits, advances, NPAs, or provisions). Sourcing t
 new regulatory-filings collector, which is a separate project. The classification half of
 the fix shipped; the metric-substitution half did not.
 
-Each future `general`-only metric widens this gap by roughly 4 percentage points for
-financials. It is a tracked constraint.
+Each future `general`-only metric widens the *information* gap; it no longer moves the
+coverage figure, which is the point of the per-template denominator.
 
 ---
 
-## 7. Pillar weights carry little information
+## 7. Pillar weights carry limited information, and v2.0.0's are in-sample
 
-Stated plainly because [VALIDATION.md](VALIDATION.md) §4 shows it: the live weights beat
-naive equal weighting on holdout by 0.085 to 0.076. That is close to a tie.
+The v1 weights (25/20/15/15/15/10) beat naive equal weighting on holdout by 0.085 to 0.076
+— close to a tie — and we said then that the *choice of weights* is not where the score's
+value comes from. That is still our reading.
 
-The honest reading is that the *choice of weights* is not where the score's value comes
-from — the normalization, the sector-relative peer comparison, the eligibility gating, and
-the governance overlay do more work. We keep 25/20/15/15/15/10 because it won the holdout
-and matches established multi-factor precedent, not because we have proven it optimal.
+v2.0.0 moved the weights to 22/24/9/9/12/24 on the strength of a 20-rebalance
+out-of-sample backtest ([VALIDATION.md](VALIDATION.md) §4). Two honest caveats travel with
+that:
 
-Two individual pillars have negative standalone ICs on our data: Quality −0.007 and
-Financial Health −0.043. We keep both, because deleting them was measurably the **worst**
-variant tested.
+- **The tilt was chosen from the same 20 dates it was evaluated on**, so the weights are
+  in-sample *with respect to the weights* even though the features are point-in-time. The
+  gain persists in both non-overlapping halves of the window, which is the strongest thing
+  we can say.
+- **Monthly rebalances with a 365-day horizon are not independent observations.** We
+  originally quoted "positive on 20 of 20, p ≈ 1 in a million". That claim was **withdrawn**:
+  the windows overlap by ~11 months. The defensible statement is that v2.0.0 beats v1.6.0
+  in each of the two independent horizon windows, and no p-value is asserted.
+
+Growth and Financial Health were *reduced*, not removed. A zero measured IC over 20 dates
+in one regime is not proof of uselessness, and both pillars are partly risk controls.
 
 ---
 
@@ -209,7 +224,17 @@ Ordered roughly by how much we think it would improve the score:
 1. **Point-in-time feature extraction** — wire the vintage store into feature building and
    backfill. Removes the §1 caveat and unlocks honest composite backtesting.
 2. **Extend the `n_obs` guard to L2** before cutting any new reference version (§4).
-3. **Pooled historical reference distribution**, which depends on (1).
+3. **Pooled historical reference distribution.** A pooled, frozen reference now exists for
+   the *backtest* harness (built from point-in-time features over 2022–23); the live score
+   still normalizes against a single-day cross-section (the third reference version cut
+   in 2026). Moving the live
+   reference to the pooled one is the remaining step.
+3a. **Two correctness fixes proven in the backtest are not yet in the live formula.** A
+   signed earnings yield (so a loss-maker is scored *badly* on valuation rather than losing
+   the metric) and a 1%-of-sales materiality floor on the cash-conversion denominator
+   (12.4% of live `cfo_to_np` values exceed |5|; the meaningful band is ~0.5–2) are both
+   in the point-in-time extractor and both absent from the live one. They ship behind a
+   formula bump once the live/PIT split is closed.
 4. **Bank/NBFC metric set** — requires a new regulatory-filings source (§6).
 5. **Governance overlay calibration** — blocked on time, testable from ~March 2027 (§3).
 6. **Liquidity gate relaxation** to ~120 traded days with a lower confidence band (§5).

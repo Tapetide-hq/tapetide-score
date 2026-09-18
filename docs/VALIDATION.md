@@ -129,18 +129,45 @@ The full-sample ranking was **exactly inverted** on unseen data. The IC-weighted
 that looked best in-sample came fourth; deleting "underperforming" pillars was the single
 worst thing we could have done.
 
-**Consequences we accepted:**
+**Consequences we accepted at the time:**
 
-- **Keep the live weights 25/20/15/15/15/10.** They won the holdout.
+- **Keep the v1 weights 25/20/15/15/15/10.** They won the holdout.
 - **Do not delete Quality or Financial Health** for their negative standalone ICs (−0.007
   and −0.043). Deleting them *was* the worst variant.
 - Live weights versus naive equal weight is nearly a tie, which honestly means **the
-  weights carry little information**. We therefore anchor them on NSE/MSCI multi-factor
-  precedent rather than on our own fitting — a position now supported by measurement rather
-  than by deference.
+  weights carry little information**.
 
-**Any proposal to change pillar weights must include a fit/holdout split.** A full-sample
-improvement is not evidence.
+### What changed the weights anyway (v2.0.0)
+
+The table above was measured on *latest-reported* fundamentals stamped onto past dates,
+which is look-ahead ([LIMITATIONS.md](LIMITATIONS.md) §1). Once a point-in-time extractor
+existed, the score could be backtested honestly for the first time: 44 monthly rebalances,
+2022–2025, 365-day forward horizon, on a pooled frozen reference built from 2022–23 alone.
+
+| Variant | Weights | Excludes | OOS mean IC | Info ratio | Window 1 | Window 2 |
+|---|---|---|---:|---:|---:|---:|
+| v1.6.0 | 25/20/15/15/15/10 | — | +0.0506 | 2.45 | +0.0477 | +0.0559 |
+| tilt only | 22/24/9/9/12/24 | — | +0.0667 | 3.32 | +0.0602 | +0.0787 |
+| **v2.0.0 (shipped)** | 22/24/9/9/12/24 | two 3-yr CAGRs | **+0.0682** | **4.26** | **+0.0685** | **+0.0677** |
+| no-growth arm | 24/26.5/0/10/13/26.5 | all Growth | +0.0718 | 4.37 | +0.0676 | +0.0796 |
+
+"Window 1 / Window 2" are the two **non-overlapping** 365-day horizon windows — the only
+independent observations the panel contains. The shipped variant beats v1.6.0 in both and is
+the most stable across them (spread 0.0008 against 0.0120 for the no-growth arm, whose
+apparent edge sits entirely in one window). That stability, not the headline IC, is why the
+shipped variant is the shipped variant.
+
+**Two things we will not claim.** The tilt was chosen from the same 20 dates it was
+evaluated on, so the weights are in-sample with respect to the weights. And the panel does
+not support a p-value: our first write-up quoted "20 of 20 independent, p ≈ 1 in a million",
+which was **withdrawn** because monthly rebalances measuring 365-day returns overlap by ~11
+months. Newey-West and block-bootstrap corrections were implemented and both *raise*
+apparent confidence at this sample size (a Newey-West t of +22 against a naive +19 is
+fitting noise in the autocovariances), so they are gated off until the history is long
+enough for them to mean something.
+
+**Any proposal to change pillar weights must include a fit/holdout split and must report the
+non-overlapping windows separately.** A full-sample improvement is not evidence.
 
 ---
 
@@ -241,6 +268,35 @@ Mean per-date cross-sectional rank IC against 252-day forward returns, liquid un
 | ROCE / gross-profits-to-assets | regime-flipping | Retained; negative 2021–23, positive 2024–25 |
 | Accruals | −0.093 | Red flag — US sign, *opposite* published India result |
 | `size_small` | **−0.084** | **Rejected** — actively harmful |
+
+### Per-metric IC, measured AS SCORED (v2 cycle)
+
+The table above measures raw features. Rank IC is invariant to the sigmoid and MAD scaling
+(both monotone) but **not to winsorization**, which clips both tails into ties and genuinely
+reorders the population. So the engine's own normalization is now applied before measuring.
+Out-of-sample, 22 monthly rebalances, point-in-time features:
+
+| Metric | Raw feature | **As scored** |
+|---|---:|---:|
+| `pb` | +0.0747 | **+0.1022** |
+| `pe_ttm` | +0.0756 | **+0.0823** |
+| `sales_growth_ttm` | | +0.0186 |
+| `roce_5yr` | +0.0202 | +0.0061 |
+| `opm_ttm` | +0.0328 | +0.0084 |
+| `interest_coverage` | −0.0087 | −0.0192 |
+| `chg_dii` | −0.0340 | −0.0274 |
+| `chg_fii` | −0.0461 | −0.0461 |
+| `sales_growth_3yr` | −0.0223 | **−0.0284** — unscored since v2.0.0 |
+| `profit_growth_3yr` | −0.0414 | **−0.0484** — unscored since v2.0.0 |
+
+Three metrics changed sign between an earlier ad-hoc table and this reproducible one, and
+`pb` went from near-zero to the strongest metric in the set. Two lessons we now hold to:
+**measure what the engine scores, not the input to it**, and **a table that changed the
+published formula must be reproducible by committed code** — the original was a memory,
+not evidence. Note the per-pillar Ownership IC is strongly positive (+0.061, 20 of 20 dates) while two
+of its three metrics measure negative here. We have not resolved that tension, and it is a
+reason to be cautious about reading any single row of this table as a mandate for adding or
+removing one metric.
 
 Two entries deserve emphasis:
 

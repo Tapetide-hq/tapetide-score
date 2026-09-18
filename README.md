@@ -108,13 +108,17 @@ Every step, with exact constants: **[docs/METHODOLOGY.md](docs/METHODOLOGY.md)**
 
 | Pillar | Weight | Min. metrics | What it measures |
 |---|---:|---:|---|
-| Quality | 25 | 2 | Capital efficiency, margins, earnings quality, cash conversion |
-| Valuation | 20 | 2 | Cheapness vs peers, on earnings/book/cash-flow/yield |
-| Growth | 15 | 1 | Multi-year sales and profit trajectory |
-| Financial Health | 15 | 1 | Solvency, leverage, interest coverage, distress risk |
-| Momentum | 15 | 2 | Medium-term price trend |
-| Ownership | 10 | 1 | Direction of promoter and institutional holding changes |
+| Quality | 22 | 2 | Capital efficiency, margins, earnings quality, cash conversion |
+| Valuation | 24 | 2 | Cheapness vs peers, on earnings/book/cash-flow/yield |
+| Growth | 9 | 1 | Trailing-twelve-month sales growth (single metric; see CHANGELOG v2.0.0) |
+| Financial Health | 9 | 1 | Solvency, leverage, interest coverage, distress risk |
+| Momentum | 12 | 2 | Medium-term price trend |
+| Ownership | 24 | 1 | Direction of promoter and institutional holding changes |
 | *Governance risk* | *multiplier* | — | *Surveillance, credit, pledge, insider selling, audit — penalty only* |
+
+These are the **v2.0.0** weights, published since 2026-08-25. They were chosen by an
+out-of-sample backtest, not by judgement; the v1 weights (25/20/15/15/15/10) and the
+evidence that moved them are in [docs/CHANGELOG.md](docs/CHANGELOG.md).
 
 **Core constants**
 
@@ -128,7 +132,7 @@ Every step, with exact constants: **[docs/METHODOLOGY.md](docs/METHODOLOGY.md)**
 | Hysteresis band | 2.0 points | Below this, the published score holds |
 | Governance floor | 0.50 | A multiplier can never more than halve the score |
 | Min. peer-cell observations | 30 | Below this, fall back to a coarser peer group |
-| Eligibility | ≥4 of 6 pillars **and** ≥60% metric coverage | Else "Insufficient data" |
+| Eligibility | ≥4 of 6 pillars **and** ≥60% metric coverage | Else "Insufficient data". Coverage is measured against the metrics the stock's template *can* emit and the formula *does* score |
 | Liquidity gate | ≥200 traded days in trailing 400 | Universe entry |
 
 Roughly **4,500 stocks** are scored per run, once per trading day.

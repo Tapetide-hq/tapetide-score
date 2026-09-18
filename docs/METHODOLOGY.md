@@ -1,6 +1,6 @@
 # Tapetide Score — Complete Methodology
 
-**Formula version: v1.3.0**
+**Formula version: v2.0.0** (published since 2026-08-25; see [CHANGELOG.md](CHANGELOG.md))
 
 This is the full specification of the Tapetide Score. Every constant here is the value the
 production engine runs on. Nothing is rounded off, generalized, or withheld.
@@ -207,7 +207,7 @@ pillars would let one underlying quantity dominate the composite through the bac
 
 `↑` = higher is better · `↓` = lower is better
 
-### Quality — weight 25
+### Quality — weight 22
 
 | Metric | Dir. | Definition | Template gate |
 |---|:--:|---|---|
@@ -231,7 +231,7 @@ pillars would let one underlying quantity dominate the composite through the bac
   3× over-represented in its top decile (32.3% versus an ~11% baseline). That is an
   artifact, not quality.
 
-### Valuation — weight 20
+### Valuation — weight 24
 
 | Metric | Dir. | Definition | Template gate |
 |---|:--:|---|---|
@@ -250,15 +250,33 @@ Note the deliberate split: **FCF margin sits in Quality, FCF yield in Valuation.
 is about the business, yield is about the price. Putting both in one pillar would
 double-count free cash flow.
 
-### Growth — weight 15
+### Growth — weight 9
 
-| Metric | Dir. | Definition |
-|---|:--:|---|
-| `sales_growth_3yr` | ↑ | Revenue CAGR, 3 years |
-| `profit_growth_3yr` | ↑ | Profit CAGR, 3 years |
-| `sales_growth_ttm` | ↑ | Revenue growth, trailing 12 months |
+| Metric | Dir. | Definition | Status |
+|---|:--:|---|---|
+| `sales_growth_ttm` | ↑ | Revenue growth, trailing 12 months | scored |
+| `sales_growth_3yr` | ↑ | Revenue CAGR, 3 years | **extracted but NOT scored since v2.0.0** |
+| `profit_growth_3yr` | ↑ | Profit CAGR, 3 years | **extracted but NOT scored since v2.0.0** |
 
-### Financial Health — weight 15
+Growth is a **single-metric pillar** as of v2.0.0, and we say so rather than dress it as a
+diversified aggregate. The two 3-year CAGRs measured **negative** out-of-sample rank IC
+(−0.0284 and −0.0484 as scored, over 22 rebalances), and a pillar takes a plain mean, so
+they were cancelling the one Growth metric that works (`sales_growth_ttm`, +0.0186,
+positive on 19 of 22 dates). High trailing multi-year growth predicting *lower* forward
+returns is a well-known mean-reversion effect, not a data error. The COVID base-effect
+objection (a 3-year CAGR at a 2022–25 date compares against a depressed FY20–21 base) was
+tested on a 2015–2019 window with forward returns completing before February 2020:
+`sales_growth_3yr` is *more* negative there, so that explanation is rejected for it.
+
+The two CAGRs are **excluded, not sign-flipped**: harvesting a negative IC by reversing
+a metric's direction would be fitting the sign to 22 observations. An excluded metric
+does not reach its pillar and does not count in the coverage denominator (§12).
+
+The weight stays at 9 rather than being restored to 15 precisely *because* one metric
+now carries the pillar. A "remove Growth entirely" arm was also backtested; it did not
+beat the shipped formula in both independent windows, so the pillar stays.
+
+### Financial Health — weight 9
 
 | Metric | Dir. | Definition | Template gate |
 |---|:--:|---|---|
@@ -266,7 +284,7 @@ double-count free cash flow.
 | `debt_to_equity` | ↓ | Total debt ÷ equity | all |
 | `interest_coverage` | ↑ | EBIT ÷ interest expense | all, interest > 0 |
 
-### Momentum — weight 15
+### Momentum — weight 12
 
 | Metric | Dir. | Definition |
 |---|:--:|---|
@@ -292,7 +310,7 @@ documented as such. Two metrics were removed here on measured evidence:
 "volatility-adjusted"; that was wrong and has been corrected. Low volatility was tested as
 a candidate factor and **rejected** — see [VALIDATION.md](VALIDATION.md).
 
-### Ownership — weight 10
+### Ownership — weight 24
 
 | Metric | Dir. | Definition |
 |---|:--:|---|
@@ -342,8 +360,8 @@ total_w   = Σ weight(p) for each available pillar p
 core      = Σ (weight(p) / total_w) × subscore(p)
 ```
 
-Renormalization matters: a stock missing Ownership (weight 10) is scored on the remaining
-90 rescaled to 100, rather than being penalized 10 points for a data gap. The realized
+Renormalization matters: a stock missing Ownership (weight 24) is scored on the remaining
+76 rescaled to 100, rather than being penalized 24 points for a data gap. The realized
 weights are published per stock alongside the score, so you can see exactly what was used.
 
 Pillars are folded in a fixed order so the arithmetic is reproducible.
@@ -397,8 +415,17 @@ disclosures were collateral liquidations. Critically, `invoke` does **not** matc
 `Pledge Revoke`, which is routine and correctly excluded — the two words differ by one
 letter and matching the wrong one inverts the signal entirely.
 
+**The pledge signal is point-in-time.** It reads the quarterly promoter-pledge disclosure
+record keyed on the date NSE *broadcast* it, not the quarter it describes — the median lag
+between the two is 98 days, so keying on the quarter date would penalise a stock for a level
+the market could not yet see. A disclosure older than 400 days is dropped rather than
+carried forward, because NSE re-broadcasts ancient quarters and a broadcast-only bound would
+hard-cap a stock on a three-year-old figure. The 400-day line is read off a cleanly bimodal
+distribution (1,430 of 1,455 disclosures within 150 days, the rest beyond 400, nothing
+between). Before v1.5.0 this branch was dead code: documented, never fired.
+
 **Honest disclosure about validation:** the overlay is materially active — on the current
-run, **807 of 4,496 scored stocks carry a penalty and 130 are hard-capped** — but the
+run, **666 of 4,547 scored stocks carry a penalty and 133 are hard-capped** — but the
 specific penalty magnitudes above are **asserted, not measured**. Every regulatory
 disclosure feed we use begins in 2026, while our forward-return labels end mid-2025, so
 the two windows do not yet overlap and the penalties cannot be backtested. The earliest
@@ -435,13 +462,22 @@ one-point wobble every day and lose the ability to notice a real change.
 if a previous published score exists:
     ema = 0.35 × composite_raw + 0.65 × previous
     ema = min(ema, lowest_active_hard_cap)        ← re-clamp, see below
-    published = previous  if |ema − previous| < 2.0     (hysteresis: hold)
+    published = previous  if |composite_raw − previous| < 2.0   (hysteresis: hold)
     published = ema       otherwise
 else:
     published = composite_raw
 
 final = round_half_even(published) clamped to [0, 100]
 ```
+
+**The dead band is tested on the RAW delta, and testing it on the smoothed delta was a
+real bug (fixed in v1.6.0).** Because `ema − previous = 0.35 × (composite_raw − previous)`,
+comparing the smoothed delta against 2.0 silently enforced a 5.71-point band on the raw
+value — 2.86× the documented width. And because `previous` is the previously *published
+integer*, a stock inside the inflated band re-anchored to its own frozen value every run
+and never converged: 3,557 of 4,531 stocks published exactly one distinct score across nine
+runs, and the mean gap between published and computed score was 2.5 points. That is
+standing error, not smoothing.
 
 **The post-EMA re-clamp is not redundant, and omitting it was a real bug.** EMA blends
 toward the previously published score, so a stock previously at 90 that acquires a GSM cap
@@ -450,7 +486,13 @@ the EMA decayed. The cap must be re-applied after smoothing, and after the hyste
 branch too, or the hold path leaks the same violation. This is covered by a dedicated
 regression test in the engine.
 
-Measured effect of smoothing on live data: on a typical day **4,439 of 4,489** stocks
+Smoothing looks back at most 35 days for a predecessor, and only within the same formula
+version. A stock with none publishes its raw composite unsmoothed and starts a fresh chain;
+this is what makes a formula cutover a clean one-time break rather than a blend of two
+formulas.
+
+Measured effect of smoothing on live data (under the v1.3.0 band; see
+[UPDATE-CYCLE.md](UPDATE-CYCLE.md)): on a typical day **4,439 of 4,489** stocks
 publish an unchanged score, mean absolute movement is **0.02–0.12 points**, and the
 largest single-day move is under 10. Large jumps therefore mean something real changed —
 which is the entire purpose of damping.
@@ -460,12 +502,16 @@ which is the entire purpose of damping.
 ## 12. Coverage, confidence, and the publish gate
 
 ```
-coverage_pct = used_metrics / 23 × 100
+askable       = metrics the stock's TEMPLATE can emit AND the formula actually scores
+coverage_pct  = used_metrics / askable × 100
 pillar_breadth = available_pillars / 6 × 100
-confidence   = round(0.5 × coverage_pct + 0.5 × pillar_breadth)
+confidence    = round(0.5 × coverage_pct + 0.5 × pillar_breadth)
 
 eligible = (available_pillars ≥ 4) AND (coverage_pct ≥ 60)
 ```
+
+`askable` under v2.0.0 is **21** for `general` (23 extracted, minus the two unscored 3-year
+CAGRs), **16** for `nbfc` and **14** for `bank`.
 
 An ineligible stock is published as **"Insufficient data"** with no composite score. The
 number is not computed-then-hidden; it is not shown because it would not be trustworthy.
@@ -473,15 +519,27 @@ number is not computed-then-hidden; it is not shown because it would not be trus
 **Low data lowers CONFIDENCE, never the SCORE.** Conflating the two would make sparse
 coverage look like poor performance.
 
-**The coverage denominator is global (23) by design**, and a per-template denominator has
-been proposed and deliberately declined. `coverage_pct` means "share of the engine's full
-metric set this stock has", which is comparable across every stock. Under a per-template
-denominator it would mean "share of what we chose to try" — so a bank with 8 of its 8
-applicable metrics would report 100% and outrank an industrial at 90% while carrying
-strictly less information. The tracked cost of this choice is that financial templates
-sit lower by construction: measured cohort averages are `general` 83.4%, `bank` 70.4%,
-`nbfc` 67.6%. Each future `general`-only metric costs financials roughly 4 percentage
-points. That is a known, accepted constraint, not a bug.
+**The coverage denominator is per template and per formula (v1.4.0, v2.0.0) — and an
+earlier version of this document argued the opposite.** We had declined a per-template
+denominator on the grounds that a bank on 8 of 8 applicable metrics would "outrank" an
+industrial on 90% while carrying less information. Measurement overturned that: with a flat
+23 denominator, 18.3% of NBFCs were ruled ineligible against 3.1% of general stocks, and
+209 of 223 ineligible names failed on coverage *alone* — their data was not worse, their
+denominator was. A retail user saw "Insufficient data" on a large NBFC whose every
+applicable metric was present.
+
+`coverage_pct` therefore now means "how completely do we know this company, out of the
+questions we actually ask it". Template inapplicability: `nbfc` never emits `opm_ttm`,
+`ev_ebitda`, `altman_z`, `fcf_margin`, `cfo_to_np`; `bank` additionally never emits
+`roce_5yr` or `debt_to_equity`. A metric the formula declines to score (the two 3-year
+CAGRs) leaves the denominator too — being un-asked is not the same as failing to answer.
+Note the arithmetic is not a no-op: shedding *k* from both sides moves a sub-100% ratio
+**down** (14 of 23 = 60.9% becomes 12 of 21 = 57.1%), which is how 6 stocks sitting at
+exactly 61% lost eligibility at the v2.0.0 cutover. Accepted rather than special-cased.
+
+The "less information" concern is real and is tracked in [LIMITATIONS.md](LIMITATIONS.md)
+§6; it is a fact about the company's data, not something the coverage ratio should hide by
+charging financials for questions nobody asked them.
 
 ---
 
@@ -507,8 +565,9 @@ would destroy the audit trail.
 ## 14. Worked example
 
 A `general`-template mid-cap. Suppose Quality resolves to 5 metrics, Valuation 5, Growth
-3, Financial Health 3, Momentum 2, Ownership 3 — 21 of 23 metrics, so
-`coverage_pct = 91`, all 6 pillars available, `confidence = round(0.5×91 + 0.5×100) = 96`.
+1, Financial Health 3, Momentum 2, Ownership 3 — 19 of the 21 metrics v2.0.0 asks a
+`general` stock, so `coverage_pct = 90`, all 6 pillars available,
+`confidence = round(0.5×90 + 0.5×100) = 95`.
 
 Take one metric, `roce_5yr = 22.4`, against a peer cell with
 `median = 14.2, mad = 5.1, winsor_lo = −2.0, winsor_hi = 41.0`:
@@ -526,39 +585,55 @@ Valuation 48, Growth 62, Financial Health 66, Momentum 55, Ownership 58. All six
 available so weights are used unrenormalized:
 
 ```
-core = 0.25×71 + 0.20×48 + 0.15×62 + 0.15×66 + 0.15×55 + 0.10×58
-     = 17.75 + 9.60 + 9.30 + 9.90 + 8.25 + 5.80
-     = 60.60
+core = 0.22×71 + 0.24×48 + 0.09×62 + 0.09×66 + 0.12×55 + 0.24×58
+     = 15.62 + 11.52 + 5.58 + 5.94 + 6.60 + 13.92
+     = 59.18
 ```
 
 Valuation is 48, below the 70 damper threshold, so no value-trap penalty. With no red
-flags the multiplier is 1.0 and no cap applies, giving `composite_raw = 60.60`.
+flags the multiplier is 1.0 and no cap applies, giving `composite_raw = 59.18`.
 
 If the previous published score was 60:
 
 ```
-ema = 0.35 × 60.60 + 0.65 × 60 = 60.21
-|60.21 − 60| = 0.21 < 2.0       → hysteresis holds
+|59.18 − 60| = 0.82 < 2.0       → hysteresis holds (tested on the RAW delta)
 published = 60
 ```
 
-The score stays at **60** — a 0.6-point drift in fundamentals is not news.
+The score stays at **60** — a 0.8-point drift in fundamentals is not news. Had the raw
+composite moved by 2.0 or more, the published value would be
+`0.35 × composite_raw + 0.65 × 60`, re-clamped to any active hard cap.
 
 ---
 
 ## Interpreting the bands
 
-| Range | Label | Meaning |
-|---|---|---|
-| 70–100 | Strong | Broad strength across pillars, clean governance |
-| 60–70 | Above average | Meaningful strengths in several pillars |
-| 50–60 | Average | Roughly typical for its sector and size |
-| 30–50 | Below average | Notable weaknesses or caveats |
-| 0–30 | Weak | Multiple weak pillars and/or active red flags |
+| Range | Label | Share of scored stocks | Meaning |
+|---|---|---:|---|
+| 66–100 | Strong | ~3% | Broad strength across pillars, clean governance |
+| 55–65 | Good | ~29% | Meaningful strengths in several pillars |
+| 45–54 | Average | ~42% | Roughly typical for its sector and size |
+| 37–44 | Weak | ~19% | Notable weaknesses or caveats |
+| 0–36 | Poor | ~8% | Multiple weak pillars and/or active red flags |
 
-On live data the distribution is a clean bell centred near 55, with roughly 2 stocks above
-70 and about 80 below 30 in a typical run — a genuinely strong or genuinely broken company
-is rare, which is what a well-calibrated rating should show.
+**The composite is measurably narrow, and the bands are calibrated to that fact.** Because
+the composite is a weighted mean of pillars that are themselves means of sigmoid-mapped
+metrics, reaching 80 requires a stock near +3z on nearly every metric at once. Across the
+entire published history the range is **12 to 77** and nothing has ever scored 80. The
+original bands (70/60/50/30) were pitched for a score that spreads over 0–100 and labelled
+47% of the market "Weak" while the median stock sat one point above that floor.
+
+The cutoffs are the **p97 / p70 / p30 / p10** of the published distribution, measured to be
+stable to within a point across every formula and reference version, and then **frozen as
+literals**. They are deliberately not recomputed per run: a live percentile moves whenever
+any *other* stock changes, so "Good" would stop meaning the same thing over time and would
+differ between two users applying different filters. Re-verified at the v2.0.0 cutover on
+the governed production distribution: p97 65 / p70 55 / p30 45 / p10 38 against floors of
+66 / 55 / 45 / 37, so no floor moved.
+
+There is deliberately no "80+" band. A permanently empty tier implies headroom the score
+does not use. An earlier version of this table described a bell "centred near 55"; the
+measured median is 50–51.
 
 ---
 
