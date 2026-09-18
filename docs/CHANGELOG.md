@@ -8,6 +8,158 @@ Version numbers are the `formula_version` stamped on every published score.
 
 ---
 
+## v2.0.0 — Weights chosen by measurement; two negative-IC metrics unscored
+
+**The first version whose pillar weights were chosen by an out-of-sample backtest rather than
+by judgement, and the first change to move the score for the whole universe at once.**
+Published from 2026-08-25.
+
+| | Quality | Valuation | Growth | Fin. Health | Momentum | Ownership |
+|---|---:|---:|---:|---:|---:|---:|
+| v1.6.0 | 25 | 20 | 15 | 15 | 15 | 10 |
+| **v2.0.0** | **22** | **24** | **9** | **9** | **12** | **24** |
+
+Plus `sales_growth_3yr` and `profit_growth_3yr` are **no longer scored** (still extracted,
+still visible in the screener). Minimum-metric bars are unchanged.
+
+**What made this possible.** The live feature table has no as-of column and is overwritten
+daily, so until this cycle the score could not be backtested at all — the 28 score dates
+that existed were the only 28 that could ever exist. A point-in-time fundamentals store
+already held what was needed; wiring it into a separate backtest extractor gave 44 monthly
+rebalances over 2022–2025 with a 365-day forward horizon. **No published number moved**
+during that work: every backtest artifact is a sibling table, and a golden fixture of 191
+real production cases pinned the live formula byte-for-byte until the deliberate cutover.
+
+**↩ prior belief overturned — Ownership.** An 8-week live audit measured Ownership at
++0.017 and we had planned to *retire* it. Out of sample it is the **strongest** pillar
+(+0.061, positive on 20 of 20 rebalances). Retiring it would have deleted the best signal in
+the score. The actual dead weight was Growth (−0.003) and Financial Health (−0.002): 30
+points of weight with no measurable signal, diluting the composite below what Ownership and
+Valuation achieve alone.
+
+Per-pillar out-of-sample rank IC, 20 monthly rebalances:
+
+| Pillar | v1 weight | Mean IC | Dates positive |
+|---|---:|---:|---:|
+| Ownership | 10 | **+0.0609** | 20/20 |
+| Valuation | 20 | +0.0545 | 20/20 |
+| Quality | 25 | +0.0494 | 20/20 |
+| Momentum | 15 | +0.0237 | 9/20 |
+| Financial Health | 15 | −0.0021 | 8/20 |
+| Growth | 15 | −0.0034 | 10/20 |
+
+**Growth and Financial Health were reduced, not removed.** A zero measured IC over 20 dates
+in one regime is not proof of uselessness; both are partly risk controls; and cutting them
+to zero would make a three-factor score wearing a six-pillar label. A "remove Growth
+entirely" arm was backtested and did not beat the shipped formula in both independent
+windows.
+
+**Why exclusion rather than IC weighting.** Full IC-proportional weights were deliberately
+*not* fitted: twenty weights against 22 observations is overfitting regardless of the
+result, and the in/out-of-sample ratio already widened from 1.57× to 1.70× on this
+two-parameter change. Excluding the two negative-IC CAGRs rather than sign-flipping them is
+the same discipline — the direction registry encodes economics, not a backtest.
+
+**Measured on the live universe before cutover** (4,451 stocks scored under both formulas
+through the full production path): mean signed move −0.15, mean absolute move 2.73, max 15;
+1,229 stocks (27.6%) change band; **6 lose their score** (all at exactly 61% coverage,
+answering 12 of the 21 questions v2.0.0 asks — arithmetic, accepted rather than
+special-cased) and 15 gain one. Band floors were **not** moved: on the governed production
+distribution the percentile anchors landed at 65/55/45/38 against floors of 66/55/45/37.
+
+**Withdrawn claim.** The first write-up said "positive on 20 of 20 *independent* rebalances,
+p ≈ 1 in 1,048,576". Monthly rebalances measuring 365-day returns overlap by ~11 months, so
+they are not independent draws and that p-value was false. The textbook corrections
+(Newey-West, block bootstrap) were implemented and **both fail toward more confidence** at
+this sample size, so they are gated off. What we state instead: v2.0.0 beats v1.6.0 in
+**each of the two non-overlapping horizon windows** (+0.0685 and +0.0677 against +0.0477 and
++0.0559), and it is the most stable variant across them (spread 0.0008). No p-value is
+asserted anywhere.
+
+**Also corrected in the same cycle:** the per-metric IC table behind the exclusion decision
+had been produced ad hoc with no reproducing code. Rebuilt as a committed phase, it turned
+out the naive version measured the *raw* feature rather than the value *as scored* —
+winsorization clips both tails into ties and reorders the population, so rank IC is not
+invariant to it. Three metrics changed sign under the faithful measurement; the two excluded
+CAGRs landed *more* negative (−0.0284, −0.0484), so the exclusion is better supported than
+the evidence that motivated it. The COVID base-effect objection was tested on a 2015–2019
+window with all forward returns completing before February 2020: rejected for
+`sales_growth_3yr`, partly supported for `profit_growth_3yr`.
+
+---
+
+## v1.6.0 — Hysteresis measured on the raw delta
+
+**Bug fix that changes published values, hence a version.** The dead band was tested against
+the *smoothed* delta. Since `ema − prev = 0.35 × (raw − prev)`, `|ema − prev| < 2.0` really
+enforced `|raw − prev| < 5.714` — **2.86× the documented band**. Solved out of production
+data: the largest *held* raw move was 5.710 and the smallest *published* one 5.720.
+
+Not merely lag. `prev` is the previously published *integer*, so a stock inside the inflated
+band re-anchored to its own frozen value every run and never converged: mean gap between
+published and computed score 2.53 points, **3,557 of 4,531 stocks published exactly one
+distinct score across nine runs**, and 2,620 were carrying a suppressed move. It also
+concealed a real reference-version defect that swung the Quality pillar ~5 points while the
+published integer never moved. A freeze that hides a defect is not anti-whipsaw protection.
+
+Fix: one comparison, on the raw delta. The EMA blend and post-EMA cap re-clamp are unchanged.
+
+---
+
+## v1.5.0 — The promoter-pledge penalty finally fires
+
+**A published claim that was false, corrected.** The methodology had listed pledge penalties
+(>25% soft, >50% harder) and a >75% hard cap at 40 since v1.0.0 — and the code path that
+loads governance data never set the pledge field, so every branch was dead. **18 stocks
+above 75% pledged were publishing scores above the cap the methodology said applied to
+them.** The most consequential action the engine takes was wired to nothing.
+
+**Source choice is the correctness story.** The obvious current-snapshot pledge column has
+no as-of date, so a historical run would score against today's level. The quarterly
+disclosure record is used instead, keyed on the NSE **broadcast** date, not the quarter date:
+median lag from quarter end to broadcast is 98 days (minimum 14), so keying on the quarter
+would be look-ahead measured in months. A disclosure older than 400 days is dropped, not
+carried — NSE re-broadcasts ancient quarters (one candidate was 1,325 days stale), and the
+400-day line is read off a cleanly bimodal distribution with nothing between 150 and 400.
+Dropping is the conservative direction for a penalty.
+
+Shadow-replayed before shipping: 134 stocks flagged, 37 hard-capped, capped drops average
+3 points in micro-caps and 8–9.5 in larger names, max 29. **The drop is immediate**, because
+the hard cap is re-clamped after smoothing — correct for a hard cap, and stated here rather
+than shipped quietly.
+
+---
+
+## v1.4.0 — Coverage measured against what the template can emit
+
+**↩ prior belief overturned — this repository previously argued the opposite.** We had
+declined a per-template coverage denominator on the grounds that a bank on 8 of 8 applicable
+metrics would report 100% and "outrank" an industrial on 90% while carrying less
+information.
+
+Measured: with the flat 23 denominator, `bank` could reach at most 16 of 23 and `nbfc` 18, so
+against a flat 60% eligibility bar `general` had 36 points of headroom and `bank` had 5. The
+effect was exactly what that predicts — **18.3% of NBFCs ruled ineligible against 3.1% of
+general stocks, and 209 of 223 ineligible names failed on coverage alone**, not on pillar
+breadth. Their data was not worse; their denominator was. A large NBFC with every applicable
+metric present showed "Insufficient data".
+
+Now the denominator is the metrics the stock's template can emit: `nbfc` never emits
+`opm_ttm`, `ev_ebitda`, `altman_z`, `fcf_margin`, `cfo_to_np`; `bank` additionally never emits
+`roce_5yr` or `debt_to_equity`. Kept as an inapplicability list with the count *derived*, so
+adding a metric automatically raises every ceiling that can emit it. An unknown template
+deliberately gets the full denominator — understating coverage suppresses a score, which
+fails safe. Shadow-replayed: 92 stocks gain eligibility, 0 lose it, `general` untouched.
+
+Two other defects fixed in the same release without changing the formula: the reference
+depth gate was keyed without `template`, so `bank` and `nbfc` (both in sector Financial
+Services) collided and banks were normalised against a 25-observation cell that should have
+fallen back; and a degenerate reference cell (no usable scale) terminated the fallback search
+instead of continuing to the next level (120 such cells, all with a usable coarser
+counterpart).
+
+---
+
 ## v1.3.0 — Cash conversion added
 
 **Added `cfo_to_np` to Quality** — operating cash flow ÷ net profit.
@@ -202,12 +354,16 @@ these will otherwise be re-proposed.
 | Candidate | Why rejected |
 |---|---|
 | **Low volatility / BAB pillar** | Published Indian research reports 1.08%/mo alpha and 29.1%/yr, beating momentum and value. On our universe: mean IC +0.031 with the sign flipping — **5 positive years, 5 negative**. A regime bet, not a factor. BAB's alpha comes from leverage and beta-neutralization, neither of which survives translation into an unlevered long-only ranking. |
-| **IC-proportional pillar weights** | Looked like a decisive win in-sample (0.110 vs 0.060). Fit/holdout **inverted the ranking**: live weights 0.047 → **0.085 (best)**, IC-weighted 0.141 → 0.054. |
+| **IC-proportional pillar weights** (v1 cycle) | Looked like a decisive win in-sample (0.110 vs 0.060). Fit/holdout **inverted the ranking**: live weights 0.047 → **0.085 (best)**, IC-weighted 0.141 → 0.054. Superseded by the point-in-time backtest that produced v2.0.0, which is a two-parameter tilt, not a fit. |
 | **Dropping negative-IC pillars** (Quality, Financial Health) | Best in-sample (0.179), **worst on holdout (0.036)**. |
 | **Institutional M−1 momentum skip** | Both NSE and MSCI mandate it. On our data it **cost** signal: 6m 0.074 → 0.068, 12m 0.047 → 0.038. |
 | **Small-size factor** | Actively harmful, IC **−0.084**. |
 | **"Fixing" accruals to match published India research** | Our data shows the US sign (−0.093), holdout-confirmed negative on 50/50 dates in both windows. We kept our measurement. |
 | **Dedicated insurance template** | Only ~7 insurance stocks clear the liquidity gate, so it would calibrate median/MAD from 7 observations. Folded into `nbfc`, which already nulls what insurers cannot support. |
-| **Per-template coverage denominator** | Would make a bank on 8-of-8 applicable metrics report 100% and outrank an industrial at 90% while carrying strictly less information. |
+| ~~**Per-template coverage denominator**~~ | **Reversed in v1.4.0.** We rejected it on the "8-of-8 outranks 90%" argument; measurement showed the flat denominator was ruling 18.3% of NBFCs ineligible on their denominator alone. Kept here so the original reasoning stays on record. |
+| **IC-proportional weights, fitted** (v2 cycle) | Re-tested against point-in-time features: fitting ~20 metric weights to 22 observations widened the in/out-of-sample ratio on even a two-parameter change. Metric *exclusion* shipped; IC weighting did not. |
+| **Raising Financial Health to 2 minimum metrics** | Smallest gain of the three v2 candidates (+0.002 IC) and by far the largest cost: 175 previously scored stocks would have lost their score. Dropped from the ship candidate. |
+| **Removing Growth entirely** | Backtested as an arm. Did not beat the shipped formula in both independent horizon windows; its apparent edge sat in one window only. |
+| **Ownership holding LEVELS** (in addition to changes) | Measured and deliberately not shipped; ~35% of stocks score exactly 50 on Ownership because their holdings did not move. Open work. |
 | **Hysteresis on band thresholds** | Makes classification stateful, breaking the determinism that is the whole defensibility argument. |
 | **Bank-specific metrics** (NPA, CAR, PCR, NIM, CASA) | Not rejected — **not available**. Audited: those fields return zero rows across our data estate. Requires a new regulatory-filings source. |

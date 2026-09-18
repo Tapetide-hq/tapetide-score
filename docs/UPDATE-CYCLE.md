@@ -124,6 +124,17 @@ absolute movement is well under a tenth of a point.
 score jumps several points, the inputs genuinely changed or a red flag became active — it
 is not daily noise.
 
+Two caveats on the table above, both now documented in [CHANGELOG.md](CHANGELOG.md):
+
+- Those figures were measured under v1.3.0, when the hysteresis band was accidentally
+  2.86× wider than documented (v1.6.0 fixed it). Under the corrected band more stocks
+  move each day by design; the qualitative claim — a visible move is a real move — holds.
+- **Smoothing looks back at most 35 days for a predecessor score**, and only within the
+  same formula version. A stock with no predecessor in that window publishes its raw
+  composite unsmoothed and starts a fresh chain. This is what makes a formula cutover a
+  clean one-time break rather than a blend of two formulas, and it is why the first run
+  under a new version legitimately moves the whole universe at once.
+
 ---
 
 ## Reference versioning
